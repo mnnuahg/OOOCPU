@@ -23,6 +23,106 @@ module test_bench();
     localparam  NUM_INST        = 32;
     localparam  RAND_GEN_INST   = 1;
     
+    function automatic random_gen_inst(ref bit     [INST_BIT       -1:0]   inst    [NUM_INST-1:0], ref integer seed);
+        bit [NUM_REG    -1:0]   reg_initialized;
+        
+        bit [OP_BIT     -1:0]   op;
+        bit [REG_ID_BIT -1:0]   dst_reg;
+        bit [REG_ID_BIT -1:0]   src_reg0;
+        bit [REG_ID_BIT -1:0]   src_reg1;
+        bit [IMM_BIT    -1:0]   imm;
+        
+        reg_initialized [0] = {{NUM_REG-1{1'b0}}, 1'b1};
+        
+        for (int i=0; i<NUM_INST; i++) begin
+            // Only gen store/add/add_imm/shl_imm otherwise the result will likely be 0
+            // Use op = $random(seed) % 3; won't work, don't know why
+            do begin
+                op  = $random(seed);
+            end while(op >= 4);
+            
+            do begin
+                src_reg0 = $random(seed);
+            end while(!reg_initialized[src_reg0]);
+            
+            if (op != OP_ADD_IMM && op != OP_SHL_IMM && op != OP_SHR_IMM) begin
+                do begin
+                    src_reg1 = $random(seed);
+                end while(!reg_initialized[src_reg1]);
+                imm = 0;
+            end
+            else begin
+                src_reg1 = 0;
+                imm = $random(seed);
+            end
+            
+            if (op == OP_ST) begin
+                dst_reg = 0;
+            end
+            else begin
+                do begin
+                    dst_reg = $random(seed);
+                end while (dst_reg == 0);
+            end
+            
+            reg_initialized [dst_reg] = 1'b1;
+            inst            [i      ] = {op, dst_reg, src_reg1, src_reg0, imm};
+            
+            $display("inst[%d] = {3'd%d, 3'd%d, 3'd%d, 3'd%d, 4'd%d};", i, op, dst_reg, src_reg1, src_reg0, imm);
+        end
+    endfunction
+    
+    function print_inst_golden(bit     [INST_BIT       -1:0]   inst    [NUM_INST-1:0]);
+        logic   [REG_BIT    -1:0]   golden_regs [NUM_REG-1:0];
+    
+        // Print expected store addr/data
+        golden_regs [0] = 0;
+        for (int i=1; i<NUM_REG; i++) begin
+            golden_regs [i] = {REG_BIT{1'bx}};
+        end
+        
+        for (int pc=0; pc<NUM_INST; pc++) begin
+            bit [OP_BIT     -1:0]   op;
+            bit [REG_ID_BIT -1:0]   dst_reg;
+            bit [REG_ID_BIT -1:0]   src_reg0;
+            bit [REG_ID_BIT -1:0]   src_reg1;
+            bit [IMM_BIT    -1:0]   imm;
+
+            bit [REG_BIT    -1:0]   exec_res;
+        
+            op          = inst[pc][IMM_BIT+REG_ID_BIT*3+:OP_BIT    ];
+            dst_reg     = inst[pc][IMM_BIT+REG_ID_BIT*2+:REG_ID_BIT];
+            src_reg1    = inst[pc][IMM_BIT+REG_ID_BIT  +:REG_ID_BIT];
+            src_reg0    = inst[pc][IMM_BIT             +:REG_ID_BIT];
+            imm         = inst[pc][0                   +:IMM_BIT   ];
+
+            case (op)
+                OP_ST:      exec_res    = golden_regs[src_reg1];
+                OP_ADD_IMM: exec_res    = golden_regs[src_reg0] +  imm;
+                OP_SHL_IMM: exec_res    = golden_regs[src_reg0] << imm;
+                OP_SHR_IMM: exec_res    = golden_regs[src_reg0] >> imm;
+                OP_ADD:     exec_res    = golden_regs[src_reg0] +  golden_regs[src_reg1];
+                OP_SHL:     exec_res    = golden_regs[src_reg0] << golden_regs[src_reg1];
+                OP_SHR:     exec_res    = golden_regs[src_reg0] >> golden_regs[src_reg1];
+                OP_MUL:     exec_res    = golden_regs[src_reg0] *  golden_regs[src_reg1];
+                default:    exec_res    = 0;
+            endcase
+            
+            if (op == OP_ST) begin
+                $display("Golden: Store addr %x, data %d", golden_regs[src_reg0], golden_regs[src_reg1]);
+            end
+            else begin
+                //if (op == OP_ADD) begin
+                //    $display("Golden[%d]: dst_reg %d, src_reg0 %d, src_reg1 %d", pc, exec_res, golden_regs[src_reg0], golden_regs[src_reg1]);
+                //end
+                //else if (op == OP_ADD_IMM || OP_SHL_IMM) begin
+                //    $display("Golden[%d]: dst_reg %d, src_reg0 %d", pc, exec_res, golden_regs[src_reg0]);
+                //end
+                golden_regs[dst_reg]    = exec_res;
+            end
+        end
+    endfunction
+    
     integer seed;
 
     bit     clk;
@@ -101,10 +201,8 @@ module test_bench();
     assign  inst_src_reg0   = cur_inst  [IMM_BIT             +:REG_ID_BIT];
     assign  inst_imm        = cur_inst  [0                   +:IMM_BIT   ];
     
-    logic   [REG_BIT    -1:0]   golden_regs [NUM_REG-1:0];
-    
     initial begin
-        seed        = 932;
+        seed        = 111;
     
         clk         = 1'b0;
         rst_n       = 1'b0;
@@ -125,106 +223,37 @@ module test_bench();
             inst[5] = {OP_ST     , 3'd0, 3'd0, 3'd1, 4'd0};
         end
         else begin
-            bit [NUM_REG    -1:0]   reg_initialized;
-            
-            bit [OP_BIT     -1:0]   op;
-            bit [REG_ID_BIT -1:0]   dst_reg;
-            bit [REG_ID_BIT -1:0]   src_reg0;
-            bit [REG_ID_BIT -1:0]   src_reg1;
-            bit [IMM_BIT    -1:0]   imm;
-            
-            reg_initialized [0] = {{NUM_REG-1{1'b0}}, 1'b1};
-            
-            for (int i=0; i<NUM_INST; i++) begin
-                // Only gen store/add/add_imm/shl_imm otherwise the result will likely be 0
-                // Use op = $random(seed) % 3; won't work, don't know why
-                do begin
-                    op  = $random(seed);
-                end while(op >= 4);
-                
-                do begin
-                    src_reg0 = $random(seed);
-                end while(!reg_initialized[src_reg0]);
-                
-                if (op != OP_ADD_IMM && op != OP_SHL_IMM && op != OP_SHR_IMM) begin
-                    do begin
-                        src_reg1 = $random(seed);
-                    end while(!reg_initialized[src_reg1]);
-                    imm = 0;
-                end
-                else begin
-                    src_reg1 = 0;
-                    imm = $random(seed);
-                end
-                
-                if (op == OP_ST) begin
-                    dst_reg = 0;
-                end
-                else begin
-                    do begin
-                        dst_reg = $random(seed);
-                    end while (dst_reg == 0);
-                end
-                
-                reg_initialized [dst_reg] = 1'b1;
-                inst            [i      ] = {op, dst_reg, src_reg1, src_reg0, imm};
-                
-                $display("inst[%d] = {3'd%d, 3'd%d, 3'd%d, 3'd%d, 4'd%d};", i, op, dst_reg, src_reg1, src_reg0, imm);
-            end
+            random_gen_inst(inst, seed);
         end
         
-        // Print expected store addr/data
-        golden_regs [0] = 0;
-        for (int i=1; i<NUM_REG; i++) begin
-            golden_regs [i] = {REG_BIT{1'bx}};
-        end
-        
-        for (int pc=0; pc<NUM_INST; pc++) begin
-            bit [OP_BIT     -1:0]   op;
-            bit [REG_ID_BIT -1:0]   dst_reg;
-            bit [REG_ID_BIT -1:0]   src_reg0;
-            bit [REG_ID_BIT -1:0]   src_reg1;
-            bit [IMM_BIT    -1:0]   imm;
-
-            bit [REG_BIT    -1:0]   exec_res;
-        
-            op          = inst[pc][IMM_BIT+REG_ID_BIT*3+:OP_BIT    ];
-            dst_reg     = inst[pc][IMM_BIT+REG_ID_BIT*2+:REG_ID_BIT];
-            src_reg1    = inst[pc][IMM_BIT+REG_ID_BIT  +:REG_ID_BIT];
-            src_reg0    = inst[pc][IMM_BIT             +:REG_ID_BIT];
-            imm         = inst[pc][0                   +:IMM_BIT   ];
-
-            case (op)
-                OP_ST:      exec_res    = golden_regs[src_reg1];
-                OP_ADD_IMM: exec_res    = golden_regs[src_reg0] +  imm;
-                OP_SHL_IMM: exec_res    = golden_regs[src_reg0] << imm;
-                OP_SHR_IMM: exec_res    = golden_regs[src_reg0] >> imm;
-                OP_ADD:     exec_res    = golden_regs[src_reg0] +  golden_regs[src_reg1];
-                OP_SHL:     exec_res    = golden_regs[src_reg0] << golden_regs[src_reg1];
-                OP_SHR:     exec_res    = golden_regs[src_reg0] >> golden_regs[src_reg1];
-                OP_MUL:     exec_res    = golden_regs[src_reg0] *  golden_regs[src_reg1];
-                default:    exec_res    = 0;
-            endcase
-            
-            if (op == OP_ST) begin
-                $display("Golden: Store addr %x, data %d", golden_regs[src_reg0], golden_regs[src_reg1]);
-            end
-            else begin
-                //if (op == OP_ADD) begin
-                //    $display("Golden[%d]: dst_reg %d, src_reg0 %d, src_reg1 %d", pc, exec_res, golden_regs[src_reg0], golden_regs[src_reg1]);
-                //end
-                //else if (op == OP_ADD_IMM || OP_SHL_IMM) begin
-                //    $display("Golden[%d]: dst_reg %d, src_reg0 %d", pc, exec_res, golden_regs[src_reg0]);
-                //end
-                golden_regs[dst_reg]    = exec_res;
-            end
-        end
+        print_inst_golden(inst);
         
         #0.1
         rst_n       = 1'b1;
         
-        #1000
+        #2000
         $finish;
+    end
+    
+    always@(posedge clk) begin: gen_more_inst
+        if (~rst_n) disable gen_more_inst;
+        
+        if (exec_finish) begin
+            $display("Time %d: Execution finished", $time);
+            
+            if (RAND_GEN_INST) begin
+                #0.1
+                rst_n   = 1'b0;
+                random_gen_inst(inst, seed);
+                print_inst_golden(inst);
+                
+                #0.1
+                rst_n   = 1'b1;
+            end
+            else begin
+                $finish;
+            end
+        end
     end
     
     always@(posedge clk) begin: print_store
@@ -232,15 +261,6 @@ module test_bench();
         
         if (write_mem_vld && write_mem_rdy) begin
             $display("Simulation: Store addr %x, data %d", write_mem_addr, write_mem_data);
-        end
-    end
-    
-    always@(posedge clk) begin: print_finish
-        if (~rst_n) disable print_finish;
-        
-        if (exec_finish) begin
-            $display("Time %d: Execution finished", $time);
-            $finish;
         end
     end
     

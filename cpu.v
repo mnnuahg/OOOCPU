@@ -58,6 +58,7 @@ module cpu  #   (parameter  REG_BIT         = 16,
     end
 
     wire    [NUM_REG          -1:0] reg_read_pending;
+    wire    [NUM_REG          -1:0] reg_write_pending;
     
     wire    [NUM_FU           -1:0] fu_issue_rdy;
     wire    [REG_ID_BIT       -1:0] fu_dst_reg;
@@ -101,6 +102,7 @@ module cpu  #   (parameter  REG_BIT         = 16,
             
             .fu_available           (fu_issue_rdy),
             .reg_read_pending       (reg_read_pending),
+            .reg_write_pending      (reg_write_pending),
             
             .issue_vld              (inst_vld),
             .issue_rdy              (inst_rdy),
@@ -162,14 +164,15 @@ module cpu  #   (parameter  REG_BIT         = 16,
                         
     wire    [NUM_REG-1:0]   pending_read_mask_of_fu [NUM_FU-1:0];
 
-    binary_func_unit    #(  .NUM_REG        (NUM_REG),
-                            .REG_BIT        (REG_BIT),
-                            .IMM_BIT        (IMM_BIT),
-                            .INST_ID_BIT    (INST_ID_BIT),
-                            .FUNC           (0),
-                            .ISSUE_FIFO_SIZE(ISSUE_FIFO_SIZE),
-                            .DELAY_BIT      (3),
-                            .DELAY          (4))
+    binary_func_unit    #(  .NUM_REG            (NUM_REG),
+                            .REG_BIT            (REG_BIT),
+                            .IMM_BIT            (IMM_BIT),
+                            .INST_ID_BIT        (INST_ID_BIT),
+                            .FUNC               (0),
+                            .ISSUE_FIFO_SIZE    (ISSUE_FIFO_SIZE),
+                            .DELAY_BIT          (3),
+                            .DELAY              (4),
+                            .FOLLOW_ISSUE_ORDER (1))
     st_fu(  .clk                (clk),
             .rst_n              (rst_n),
             
@@ -182,6 +185,7 @@ module cpu  #   (parameter  REG_BIT         = 16,
             .issue_imm          (inst_imm),
             
             .pending_read_mask  (pending_read_mask_of_fu[0]),
+            .ready_reg_mask     (~reg_write_pending),
             
             .read_req_vld       (fu_read_reg_id_vld     [0]),
             .read_req_rdy       (fu_read_reg_id_rdy     [0]),
@@ -208,14 +212,15 @@ module cpu  #   (parameter  REG_BIT         = 16,
     generate
         genvar i;
         for (i=1; i<NUM_FU; i=i+1) begin: gen_binary_fu
-            binary_func_unit    #(  .NUM_REG        (NUM_REG),
-                                    .REG_BIT        (REG_BIT),
-                                    .IMM_BIT        (IMM_BIT),
-                                    .INST_ID_BIT    (INST_ID_BIT),
-                                    .FUNC           (i),
-                                    .ISSUE_FIFO_SIZE(ISSUE_FIFO_SIZE),
-                                    .DELAY_BIT      (3),
-                                    .DELAY          (4))
+            binary_func_unit    #(  .NUM_REG            (NUM_REG),
+                                    .REG_BIT            (REG_BIT),
+                                    .IMM_BIT            (IMM_BIT),
+                                    .INST_ID_BIT        (INST_ID_BIT),
+                                    .FUNC               (i),
+                                    .ISSUE_FIFO_SIZE    (ISSUE_FIFO_SIZE),
+                                    .DELAY_BIT          (3),
+                                    .DELAY              (4),
+                                    .FOLLOW_ISSUE_ORDER (0))
             fu  (   .clk                (clk),
                     .rst_n              (rst_n),
                     
@@ -228,6 +233,7 @@ module cpu  #   (parameter  REG_BIT         = 16,
                     .issue_imm          (inst_imm),
                     
                     .pending_read_mask  (pending_read_mask_of_fu[i]),
+                    .ready_reg_mask     (~reg_write_pending),
                     
                     .read_req_vld       (fu_read_reg_id_vld     [i]),
                     .read_req_rdy       (fu_read_reg_id_rdy     [i]),

@@ -3,15 +3,16 @@
 // Can't run simulation on modelsim if define this
 //`define RAND_DELAY
 
-module binary_func_unit    #(parameter NUM_REG         = 8,
-                             parameter REG_BIT         = 16,
-                             parameter IMM_BIT         = 4,
-                             parameter INST_ID_BIT     = 8,
-                             parameter FUNC            = 1,
-                             parameter ISSUE_FIFO_SIZE = 4,
-                             parameter DELAY_BIT       = 3,
-                             parameter DELAY           = 0,
-                             parameter REG_ID_BIT      = $clog2(NUM_REG))
+module binary_func_unit    #(parameter NUM_REG              = 8,
+                             parameter REG_BIT              = 16,
+                             parameter IMM_BIT              = 4,
+                             parameter INST_ID_BIT          = 8,
+                             parameter FUNC                 = 1,
+                             parameter ISSUE_FIFO_SIZE      = 4,
+                             parameter DELAY_BIT            = 3,
+                             parameter DELAY                = 0,
+                             parameter FOLLOW_ISSUE_ORDER   = 0,
+                             parameter REG_ID_BIT           = $clog2(NUM_REG))
 (
     input                           clk,
     input                           rst_n,
@@ -24,6 +25,7 @@ module binary_func_unit    #(parameter NUM_REG         = 8,
     input       [REG_ID_BIT  -1:0]  issue_src_reg1,
     input       [IMM_BIT     -1:0]  issue_imm,
     
+    input       [NUM_REG     -1:0]  ready_reg_mask,
     output      [NUM_REG     -1:0]  pending_read_mask,
     
     output                          read_req_vld,
@@ -106,32 +108,65 @@ module binary_func_unit    #(parameter NUM_REG         = 8,
     assign  stage0_out_vld  =   fifo_out_vld && stage0_out_remain_cycle == 0 && read_req_rdy && (stage1_out_rdy || !stage1_sb_vld);
     assign  stage0_out_rdy  =                   stage0_out_remain_cycle == 0 && read_req_rdy && (stage1_out_rdy || !stage1_sb_vld);
     
-    issue_fifo  #(  .FIFO_SIZE  (ISSUE_FIFO_SIZE),
-                    .INST_ID_BIT(INST_ID_BIT),
-                    .NUM_REG    (NUM_REG),
-                    .IMM_BIT    (IMM_BIT))
-    fifo    (.clk           (clk),
-             .rst_n         (rst_n),
-             
-             .in_vld        (issue_vld),
-             .in_rdy        (issue_rdy),
-             .in_id         (issue_id),
-             .in_dst_reg    (issue_dst_reg),
-             .in_src_reg0   (issue_src_reg0),
-             .in_src_reg1   (issue_src_reg1),
-             .in_imm        (issue_imm),
+    generate
+        if (FOLLOW_ISSUE_ORDER) begin
+            issue_fifo  #(  .FIFO_SIZE  (ISSUE_FIFO_SIZE),
+                            .INST_ID_BIT(INST_ID_BIT),
+                            .NUM_REG    (NUM_REG),
+                            .IMM_BIT    (IMM_BIT))
+            fifo    (.clk           (clk),
+                     .rst_n         (rst_n),
+                     
+                     .in_vld        (issue_vld),
+                     .in_rdy        (issue_rdy),
+                     .in_id         (issue_id),
+                     .in_dst_reg    (issue_dst_reg),
+                     .in_src_reg0   (issue_src_reg0),
+                     .in_src_reg1   (issue_src_reg1),
+                     .in_imm        (issue_imm),
 
-             .pending_read  (fifo_pending_read),
-             
-             .out_vld       (fifo_out_vld),
-             .out_rdy       (fifo_out_rdy),
-             .out_id        (stage0_out_id),
-             .out_dst_reg   (stage0_out_dst_reg),
-             .out_src_reg0  (stage0_out_src_reg0),
-             .out_src_reg1  (stage0_out_src_reg1),
-             .out_imm       (stage0_out_imm),
-             
-             .empty         (fifo_empty));
+                     .pending_read  (fifo_pending_read),
+                     
+                     .out_vld       (fifo_out_vld),
+                     .out_rdy       (fifo_out_rdy),
+                     .out_id        (stage0_out_id),
+                     .out_dst_reg   (stage0_out_dst_reg),
+                     .out_src_reg0  (stage0_out_src_reg0),
+                     .out_src_reg1  (stage0_out_src_reg1),
+                     .out_imm       (stage0_out_imm),
+                     
+                     .empty         (fifo_empty));
+        end
+        else begin
+            issue_station   #(  .STATION_SIZE   (ISSUE_FIFO_SIZE),
+                                .INST_ID_BIT    (INST_ID_BIT),
+                                .NUM_REG        (NUM_REG),
+                                .IMM_BIT        (IMM_BIT))
+            station (.clk           (clk),
+                     .rst_n         (rst_n),
+                     
+                     .in_vld        (issue_vld),
+                     .in_rdy        (issue_rdy),
+                     .in_id         (issue_id),
+                     .in_dst_reg    (issue_dst_reg),
+                     .in_src_reg0   (issue_src_reg0),
+                     .in_src_reg1   (issue_src_reg1),
+                     .in_imm        (issue_imm),
+
+                     .ready_reg_mask(ready_reg_mask),
+                     .pending_read  (fifo_pending_read),
+                     
+                     .out_vld       (fifo_out_vld),
+                     .out_rdy       (fifo_out_rdy),
+                     .out_id        (stage0_out_id),
+                     .out_dst_reg   (stage0_out_dst_reg),
+                     .out_src_reg0  (stage0_out_src_reg0),
+                     .out_src_reg1  (stage0_out_src_reg1),
+                     .out_imm       (stage0_out_imm),
+                     
+                     .empty         (fifo_empty));
+        end
+    endgenerate
     
     // (!stage1_out_vld || stage1_out_rdy) may be unnecessary since in current implementation
     // the read_vld only used to check whether the required value is ready and won't change scoreboard entries

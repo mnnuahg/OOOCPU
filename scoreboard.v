@@ -6,42 +6,44 @@ module scoreboard #(parameter   NUM_REG         = 8,
                     parameter   FU_ID_BIT       = $clog2(NUM_FU))
 
 (
-    input                           clk,
-    input                           rst_n,
+    input                               clk,
+    input                               rst_n,
     
-    input   [NUM_FU           -1:0] fu_available,
-    input   [NUM_REG          -1:0] reg_read_pending,
+    input       [NUM_FU           -1:0] fu_available,
+    input       [NUM_REG          -1:0] reg_read_pending,
+    
+    output reg  [NUM_REG          -1:0] reg_write_pending,
                               
-    input                           issue_vld,              // Single issue per cycle
-    output                          issue_rdy,
-    input   [FU_ID_BIT        -1:0] issue_fu,
-    input   [REG_ID_BIT       -1:0] issue_dst_reg,          // 0 means the FU don't produce value
-    input   [REG_ID_BIT       -1:0] issue_src_reg0,         // 0 means the FU don't consume value
-    input   [REG_ID_BIT       -1:0] issue_src_reg1,
-    output  [REG_ID_BIT       -1:0] issue_dst_reg_rename,   // Assume the RSs are external module
-    output  [REG_ID_BIT       -1:0] issue_src_reg0_rename,  // so we just output the rename result
-    output  [REG_ID_BIT       -1:0] issue_src_reg1_rename,
+    input                               issue_vld,              // Single issue per cycle
+    output                              issue_rdy,
+    input       [FU_ID_BIT        -1:0] issue_fu,
+    input       [REG_ID_BIT       -1:0] issue_dst_reg,          // 0 means the FU don't produce value
+    input       [REG_ID_BIT       -1:0] issue_src_reg0,         // 0 means the FU don't consume value
+    input       [REG_ID_BIT       -1:0] issue_src_reg1,
+    output      [REG_ID_BIT       -1:0] issue_dst_reg_rename,   // Assume the RSs are external module
+    output      [REG_ID_BIT       -1:0] issue_src_reg0_rename,  // so we just output the rename result
+    output      [REG_ID_BIT       -1:0] issue_src_reg1_rename,
     
-    input   [NUM_FU           -1:0] fu2sb_read_reg_id_vld,
-    output  [NUM_FU           -1:0] fu2sb_read_reg_id_rdy,
-    input   [NUM_FU*REG_ID_BIT-1:0] fu2sb_read_reg0_id,
-    input   [NUM_FU*REG_ID_BIT-1:0] fu2sb_read_reg1_id,
-    input   [NUM_FU*REG_ID_BIT-1:0] fu2sb_write_reg_id_nxt, // This is used to resolve the condition like r3 = add r3, r2,
+    input       [NUM_FU           -1:0] fu2sb_read_reg_id_vld,
+    output      [NUM_FU           -1:0] fu2sb_read_reg_id_rdy,
+    input       [NUM_FU*REG_ID_BIT-1:0] fu2sb_read_reg0_id,
+    input       [NUM_FU*REG_ID_BIT-1:0] fu2sb_read_reg1_id,
+    input       [NUM_FU*REG_ID_BIT-1:0] fu2sb_write_reg_id_nxt, // This is used to resolve the condition like r3 = add r3, r2,
                                                             // in this case write_pending of r3 will be on but the read of r3 still can be issued
-    output  [NUM_FU           -1:0] sb2rf_read_reg_id_vld,
-    input   [NUM_FU           -1:0] sb2rf_read_reg_id_rdy,
-    output  [NUM_FU*REG_ID_BIT-1:0] sb2rf_read_reg0_id,
-    output  [NUM_FU*REG_ID_BIT-1:0] sb2rf_read_reg1_id,
+    output      [NUM_FU           -1:0] sb2rf_read_reg_id_vld,
+    input       [NUM_FU           -1:0] sb2rf_read_reg_id_rdy,
+    output      [NUM_FU*REG_ID_BIT-1:0] sb2rf_read_reg0_id,
+    output      [NUM_FU*REG_ID_BIT-1:0] sb2rf_read_reg1_id,
 
-    input   [NUM_FU           -1:0] fu2sb_write_reg_id_vld, // We don't need rdy if in the issue stage we ensure the renamed dst reg is retired and no one need it
-    output  [NUM_FU           -1:0] fu2sb_write_reg_id_rdy,
-    input   [NUM_FU*REG_ID_BIT-1:0] fu2sb_write_reg_id,
-    input   [NUM_FU*REG_BIT   -1:0] fu2sb_write_data,
+    input       [NUM_FU           -1:0] fu2sb_write_reg_id_vld, // We don't need rdy if in the issue stage we ensure the renamed dst reg is retired and no one need it
+    output      [NUM_FU           -1:0] fu2sb_write_reg_id_rdy,
+    input       [NUM_FU*REG_ID_BIT-1:0] fu2sb_write_reg_id,
+    input       [NUM_FU*REG_BIT   -1:0] fu2sb_write_data,
 
-    output  [NUM_FU           -1:0] sb2rf_write_reg_id_vld,
-    input   [NUM_FU           -1:0] sb2rf_write_reg_id_rdy,
-    output  [NUM_FU*REG_ID_BIT-1:0] sb2rf_write_reg_id,
-    output  [NUM_FU*REG_BIT   -1:0] sb2rf_write_data
+    output      [NUM_FU           -1:0] sb2rf_write_reg_id_vld,
+    input       [NUM_FU           -1:0] sb2rf_write_reg_id_rdy,
+    output      [NUM_FU*REG_ID_BIT-1:0] sb2rf_write_reg_id,
+    output      [NUM_FU*REG_BIT   -1:0] sb2rf_write_data
 );
 
     wire [REG_ID_BIT-1:0]   read_reg0_of_fu     [NUM_FU     -1:0];
@@ -51,7 +53,6 @@ module scoreboard #(parameter   NUM_REG         = 8,
 
     wire                    read_reg_of_fu_rdy  [NUM_FU     -1:0];
 
-    reg                     reg_write_pending   [NUM_REG    -1:0];
     reg  [REG_ID_BIT-1:0]   reg_rename          [NUM_REG    -1:0];
     reg                     reg_retire          [NUM_REG    -1:0];
     wire [NUM_REG   -1:0]   reg_free;
