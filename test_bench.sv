@@ -1,5 +1,6 @@
 module test_bench();
-    localparam  NUM_REG         = 8;
+    localparam  NUM_REG         = 16;
+    localparam  NUM_TAG         = 4;
     localparam  REG_BIT         = 16;
     localparam  IMM_BIT         = 4;
     localparam  ISSUE_FIFO_SIZE = 4;
@@ -8,8 +9,9 @@ module test_bench();
     localparam  PC_BIT          = 8;
     
     localparam  REG_ID_BIT      = $clog2(NUM_REG);
+    localparam  TAG_ID_BIT      = $clog2(NUM_TAG);
     localparam  OP_BIT          = $clog2(NUM_FU);
-    localparam  INST_BIT        = OP_BIT+REG_ID_BIT*3+IMM_BIT;
+    localparam  INST_BIT        = OP_BIT+TAG_ID_BIT*3+IMM_BIT;
     
     localparam  OP_ST           = 3'd0;
     localparam  OP_ADD          = 3'd1;
@@ -24,15 +26,15 @@ module test_bench();
     localparam  RAND_GEN_INST   = 1;
     
     function automatic random_gen_inst(ref bit     [INST_BIT       -1:0]   inst    [NUM_INST-1:0], ref integer seed);
-        bit [NUM_REG    -1:0]   reg_initialized;
+        bit [NUM_TAG    -1:0]   reg_initialized;
         
         bit [OP_BIT     -1:0]   op;
-        bit [REG_ID_BIT -1:0]   dst_reg;
-        bit [REG_ID_BIT -1:0]   src_reg0;
-        bit [REG_ID_BIT -1:0]   src_reg1;
+        bit [TAG_ID_BIT -1:0]   dst_reg;
+        bit [TAG_ID_BIT -1:0]   src_reg0;
+        bit [TAG_ID_BIT -1:0]   src_reg1;
         bit [IMM_BIT    -1:0]   imm;
         
-        reg_initialized [0] = {{NUM_REG-1{1'b0}}, 1'b1};
+        reg_initialized [0] = {{NUM_TAG-1{1'b0}}, 1'b1};
         
         for (int i=0; i<NUM_INST; i++) begin
             // Only gen store/add/add_imm/shl_imm otherwise the result will likely be 0
@@ -68,32 +70,32 @@ module test_bench();
             reg_initialized [dst_reg] = 1'b1;
             inst            [i      ] = {op, dst_reg, src_reg1, src_reg0, imm};
             
-            $display("inst[%d] = {3'd%d, 3'd%d, 3'd%d, 3'd%d, 4'd%d};", i, op, dst_reg, src_reg1, src_reg0, imm);
+            $display("inst[%d] = {%d'd%d, %d'd%d, %d'd%d, %d'd%d, %d'd%d};", i, OP_BIT, op, TAG_ID_BIT, dst_reg, TAG_ID_BIT, src_reg1, TAG_ID_BIT, src_reg0, IMM_BIT, imm);
         end
     endfunction
     
     function print_inst_golden(bit     [INST_BIT       -1:0]   inst    [NUM_INST-1:0]);
-        logic   [REG_BIT    -1:0]   golden_regs [NUM_REG-1:0];
+        logic   [REG_BIT    -1:0]   golden_regs [NUM_TAG-1:0];
     
         // Print expected store addr/data
         golden_regs [0] = 0;
-        for (int i=1; i<NUM_REG; i++) begin
+        for (int i=1; i<NUM_TAG; i++) begin
             golden_regs [i] = {REG_BIT{1'bx}};
         end
         
         for (int pc=0; pc<NUM_INST; pc++) begin
             bit [OP_BIT     -1:0]   op;
-            bit [REG_ID_BIT -1:0]   dst_reg;
-            bit [REG_ID_BIT -1:0]   src_reg0;
-            bit [REG_ID_BIT -1:0]   src_reg1;
+            bit [TAG_ID_BIT -1:0]   dst_reg;
+            bit [TAG_ID_BIT -1:0]   src_reg0;
+            bit [TAG_ID_BIT -1:0]   src_reg1;
             bit [IMM_BIT    -1:0]   imm;
 
             bit [REG_BIT    -1:0]   exec_res;
         
-            op          = inst[pc][IMM_BIT+REG_ID_BIT*3+:OP_BIT    ];
-            dst_reg     = inst[pc][IMM_BIT+REG_ID_BIT*2+:REG_ID_BIT];
-            src_reg1    = inst[pc][IMM_BIT+REG_ID_BIT  +:REG_ID_BIT];
-            src_reg0    = inst[pc][IMM_BIT             +:REG_ID_BIT];
+            op          = inst[pc][IMM_BIT+TAG_ID_BIT*3+:OP_BIT    ];
+            dst_reg     = inst[pc][IMM_BIT+TAG_ID_BIT*2+:TAG_ID_BIT];
+            src_reg1    = inst[pc][IMM_BIT+TAG_ID_BIT  +:TAG_ID_BIT];
+            src_reg0    = inst[pc][IMM_BIT             +:TAG_ID_BIT];
             imm         = inst[pc][0                   +:IMM_BIT   ];
 
             case (op)
@@ -138,9 +140,9 @@ module test_bench();
     wire                            inst_last;
     wire    [OP_BIT         -1:0]   inst_op;
     bit     [INST_ID_BIT    -1:0]   inst_id;
-    wire    [REG_ID_BIT     -1:0]   inst_dst_reg;
-    wire    [REG_ID_BIT     -1:0]   inst_src_reg0;
-    wire    [REG_ID_BIT     -1:0]   inst_src_reg1;
+    wire    [TAG_ID_BIT     -1:0]   inst_dst_reg;
+    wire    [TAG_ID_BIT     -1:0]   inst_src_reg0;
+    wire    [TAG_ID_BIT     -1:0]   inst_src_reg1;
     wire    [IMM_BIT        -1:0]   inst_imm;
     
     wire                            write_mem_vld;
@@ -152,6 +154,7 @@ module test_bench();
     
     cpu #(  .REG_BIT        (REG_BIT),
             .NUM_REG        (NUM_REG),
+            .NUM_TAG        (NUM_TAG),
             .ISSUE_FIFO_SIZE(ISSUE_FIFO_SIZE),
             .INST_ID_BIT    (INST_ID_BIT),
             .NUM_FU         (NUM_FU),
@@ -195,10 +198,10 @@ module test_bench();
     
     assign  inst_vld        = cur_pc_vld;
     assign  inst_last       = cur_pc == NUM_INST-1;
-    assign  inst_op         = cur_inst  [IMM_BIT+REG_ID_BIT*3+:OP_BIT    ];
-    assign  inst_dst_reg    = cur_inst  [IMM_BIT+REG_ID_BIT*2+:REG_ID_BIT];
-    assign  inst_src_reg1   = cur_inst  [IMM_BIT+REG_ID_BIT  +:REG_ID_BIT];
-    assign  inst_src_reg0   = cur_inst  [IMM_BIT             +:REG_ID_BIT];
+    assign  inst_op         = cur_inst  [IMM_BIT+TAG_ID_BIT*3+:OP_BIT    ];
+    assign  inst_dst_reg    = cur_inst  [IMM_BIT+TAG_ID_BIT*2+:TAG_ID_BIT];
+    assign  inst_src_reg1   = cur_inst  [IMM_BIT+TAG_ID_BIT  +:TAG_ID_BIT];
+    assign  inst_src_reg0   = cur_inst  [IMM_BIT             +:TAG_ID_BIT];
     assign  inst_imm        = cur_inst  [0                   +:IMM_BIT   ];
     
     initial begin
@@ -215,12 +218,12 @@ module test_bench();
                 inst[i] = {INST_BIT{1'b0}};
             end
         
-            inst[0] = {OP_ADD_IMM, 3'd1, 3'd0, 3'd0, 4'd1};
-            inst[1] = {OP_SHL    , 3'd2, 3'd1, 3'd1, 4'd0};
-            inst[2] = {OP_ADD_IMM, 3'd1, 3'd0, 3'd0, 4'd2};
-            inst[3] = {OP_SHL    , 3'd1, 3'd1, 3'd1, 4'd0};
-            inst[4] = {OP_ADD    , 3'd1, 3'd1, 3'd2, 4'd0};
-            inst[5] = {OP_ST     , 3'd0, 3'd0, 3'd1, 4'd0};
+            inst[0] = {OP_ADD_IMM, TAG_ID_BIT'(1), TAG_ID_BIT'(0), TAG_ID_BIT'(0), IMM_BIT'(1)};
+            inst[1] = {OP_SHL    , TAG_ID_BIT'(2), TAG_ID_BIT'(1), TAG_ID_BIT'(1), IMM_BIT'(0)};
+            inst[2] = {OP_ADD_IMM, TAG_ID_BIT'(1), TAG_ID_BIT'(0), TAG_ID_BIT'(0), IMM_BIT'(2)};
+            inst[3] = {OP_SHL    , TAG_ID_BIT'(1), TAG_ID_BIT'(1), TAG_ID_BIT'(1), IMM_BIT'(0)};
+            inst[4] = {OP_ADD    , TAG_ID_BIT'(1), TAG_ID_BIT'(1), TAG_ID_BIT'(2), IMM_BIT'(0)};
+            inst[5] = {OP_ST     , TAG_ID_BIT'(0), TAG_ID_BIT'(0), TAG_ID_BIT'(1), IMM_BIT'(0)};
         end
         else begin
             random_gen_inst(inst, seed);

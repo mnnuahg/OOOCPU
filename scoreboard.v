@@ -1,8 +1,10 @@
 module scoreboard #(parameter   NUM_REG         = 8,
+                    parameter   NUM_TAG         = 4,
                     parameter   NUM_FU          = 4,
                     parameter   REG_BIT         = 16,
   
                     parameter   REG_ID_BIT      = $clog2(NUM_REG),
+                    parameter   TAG_ID_BIT      = $clog2(NUM_TAG),
                     parameter   FU_ID_BIT       = $clog2(NUM_FU))
 
 (
@@ -17,9 +19,9 @@ module scoreboard #(parameter   NUM_REG         = 8,
     input                               issue_vld,              // Single issue per cycle
     output                              issue_rdy,
     input       [FU_ID_BIT        -1:0] issue_fu,
-    input       [REG_ID_BIT       -1:0] issue_dst_reg,          // 0 means the FU don't produce value
-    input       [REG_ID_BIT       -1:0] issue_src_reg0,         // 0 means the FU don't consume value
-    input       [REG_ID_BIT       -1:0] issue_src_reg1,
+    input       [TAG_ID_BIT       -1:0] issue_dst_reg,          // 0 means the FU don't produce value
+    input       [TAG_ID_BIT       -1:0] issue_src_reg0,         // 0 means the FU don't consume value
+    input       [TAG_ID_BIT       -1:0] issue_src_reg1,
     output      [REG_ID_BIT       -1:0] issue_dst_reg_rename,   // Assume the RSs are external module
     output      [REG_ID_BIT       -1:0] issue_src_reg0_rename,  // so we just output the rename result
     output      [REG_ID_BIT       -1:0] issue_src_reg1_rename,
@@ -29,7 +31,7 @@ module scoreboard #(parameter   NUM_REG         = 8,
     input       [NUM_FU*REG_ID_BIT-1:0] fu2sb_read_reg0_id,
     input       [NUM_FU*REG_ID_BIT-1:0] fu2sb_read_reg1_id,
     input       [NUM_FU*REG_ID_BIT-1:0] fu2sb_write_reg_id_nxt, // This is used to resolve the condition like r3 = add r3, r2,
-                                                            // in this case write_pending of r3 will be on but the read of r3 still can be issued
+                                                                // in this case write_pending of r3 will be on but the read of r3 still can be issued
     output      [NUM_FU           -1:0] sb2rf_read_reg_id_vld,
     input       [NUM_FU           -1:0] sb2rf_read_reg_id_rdy,
     output      [NUM_FU*REG_ID_BIT-1:0] sb2rf_read_reg0_id,
@@ -53,7 +55,7 @@ module scoreboard #(parameter   NUM_REG         = 8,
 
     wire                    read_reg_of_fu_rdy  [NUM_FU     -1:0];
 
-    reg  [REG_ID_BIT-1:0]   reg_rename          [NUM_REG    -1:0];
+    reg  [REG_ID_BIT-1:0]   reg_rename          [NUM_TAG    -1:0];
     reg                     reg_retire          [NUM_REG    -1:0];
     wire [NUM_REG   -1:0]   reg_free;
  
@@ -93,7 +95,7 @@ module scoreboard #(parameter   NUM_REG         = 8,
     endgenerate
     
     generate
-        for (i=0; i<NUM_REG; i=i+1) begin: gen_reg_rename
+        for (i=0; i<NUM_TAG; i=i+1) begin: gen_reg_rename
             always@(posedge clk or negedge rst_n) begin
                 if (~rst_n) begin
                     reg_rename  [i] <= 0;

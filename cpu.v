@@ -1,11 +1,14 @@
 module cpu  #   (parameter  REG_BIT         = 16,
                  parameter  IMM_BIT         = 4,
-                 parameter  NUM_REG         = 8,
+                 parameter  NUM_REG         = 16,
+                 parameter  NUM_TAG         = 8,
                  parameter  ISSUE_FIFO_SIZE = 4,
                  parameter  INST_ID_BIT     = 8,
                  parameter  NUM_FU          = 8,
                  parameter  PC_BIT          = 8,
-                 parameter  REG_ID_BIT      = $clog2(NUM_REG))
+                 parameter  REG_ID_BIT      = $clog2(NUM_REG),
+                 parameter  TAG_ID_BIT      = $clog2(NUM_TAG),
+                 parameter  FU_ID_BIT       = $clog2(NUM_FU))
 (
     input                               clk,
     input                               rst_n,
@@ -18,11 +21,11 @@ module cpu  #   (parameter  REG_BIT         = 16,
     input                               inst_vld,
     output                              inst_rdy,
     input                               inst_last,
-    input       [$clog2(NUM_FU) -1:0]   inst_op,
+    input       [FU_ID_BIT      -1:0]   inst_op,
     input       [INST_ID_BIT    -1:0]   inst_id,
-    input       [$clog2(NUM_REG)-1:0]   inst_dst_reg,
-    input       [$clog2(NUM_REG)-1:0]   inst_src_reg0,
-    input       [$clog2(NUM_REG)-1:0]   inst_src_reg1,
+    input       [TAG_ID_BIT     -1:0]   inst_dst_reg,
+    input       [TAG_ID_BIT     -1:0]   inst_src_reg0,
+    input       [TAG_ID_BIT     -1:0]   inst_src_reg1,
     input       [IMM_BIT        -1:0]   inst_imm,
     
     output                              write_mem_vld,
@@ -95,6 +98,7 @@ module cpu  #   (parameter  REG_BIT         = 16,
     wire    [NUM_FU           -1:0] fu_idle;
 
     scoreboard  #(  .NUM_REG(NUM_REG),
+                    .NUM_TAG(NUM_TAG),
                     .REG_BIT(REG_BIT),
                     .NUM_FU (NUM_FU))
     sb  (   .clk                    (clk),
