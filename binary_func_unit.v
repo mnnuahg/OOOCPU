@@ -1,8 +1,5 @@
 //`define PRINT_STAGE
 
-// Can't run simulation on modelsim if define this
-//`define RAND_DELAY
-
 module binary_func_unit    #(parameter NUM_REG              = 8,
                              parameter REG_BIT              = 16,
                              parameter IMM_BIT              = 4,
@@ -10,7 +7,6 @@ module binary_func_unit    #(parameter NUM_REG              = 8,
                              parameter FUNC                 = 1,
                              parameter ISSUE_FIFO_SIZE      = 4,
                              parameter DELAY_BIT            = 3,
-                             parameter DELAY                = 0,
                              parameter FOLLOW_ISSUE_ORDER   = 0,
                              parameter REG_ID_BIT           = $clog2(NUM_REG))
 (
@@ -45,6 +41,11 @@ module binary_func_unit    #(parameter NUM_REG              = 8,
     output      [REG_ID_BIT  -1:0]  write_back_reg_id,
     output      [REG_BIT     -1:0]  write_back_addr,
     output      [REG_BIT     -1:0]  write_back_val,
+    
+    // Just for random test
+    input       [DELAY_BIT   -1:0]  stage0_delay,
+    input       [DELAY_BIT   -1:0]  stage1_delay,
+    input       [DELAY_BIT   -1:0]  stage2_delay,
     
     output                          idle
 );
@@ -105,8 +106,8 @@ module binary_func_unit    #(parameter NUM_REG              = 8,
     
     assign  idle            =   fifo_empty && !stage1_sb_vld && !stage1_data_vld && !stage2_data_vld;
     
-    assign  stage0_out_vld  =   fifo_out_vld && stage0_out_remain_cycle == 0 && read_req_rdy && (stage1_out_rdy || !stage1_sb_vld);
-    assign  stage0_out_rdy  =                   stage0_out_remain_cycle == 0 && read_req_rdy && (stage1_out_rdy || !stage1_sb_vld);
+    assign  stage0_out_vld  =   fifo_out_vld && stage0_out_remain_cycle == 0 && read_req_rdy && ((stage1_out_rdy && stage1_out_remain_cycle == 0) || !stage1_sb_vld);
+    assign  stage0_out_rdy  =                   stage0_out_remain_cycle == 0 && read_req_rdy && ((stage1_out_rdy && stage1_out_remain_cycle == 0) || !stage1_sb_vld);
     
     generate
         if (FOLLOW_ISSUE_ORDER) begin
@@ -224,27 +225,18 @@ module binary_func_unit    #(parameter NUM_REG              = 8,
     
     always@(posedge clk or negedge rst_n) begin
         if (~rst_n) begin
-            if (DELAY != 0) begin
-`ifdef RAND_DELAY
-                stage0_out_remain_cycle <= $random();
-`else
-                stage0_out_remain_cycle <= DELAY;
-`endif
-            end
-            else
-                stage0_out_remain_cycle <= 0;
+            stage0_out_remain_cycle <= stage0_delay;
         end
         else if (fifo_out_vld && stage0_out_remain_cycle != 0) begin
             stage0_out_remain_cycle <= stage0_out_remain_cycle-1;
         end
         else if (stage0_out_vld && stage0_out_rdy) begin
-            if (DELAY != 0)
-                stage0_out_remain_cycle <= DELAY;
+            stage0_out_remain_cycle <= stage0_delay;
         end
     end
     
     assign  stage1_out_vld  = stage1_data_vld && stage1_sb_vld && stage1_out_remain_cycle == 0;
-    assign  stage1_out_rdy  = stage1_data_vld && stage1_sb_vld && stage1_out_remain_cycle == 0 && (stage2_out_rdy || !stage2_data_vld);
+    assign  stage1_out_rdy  = stage1_data_vld && stage1_sb_vld && stage1_out_remain_cycle == 0 && ((stage2_out_rdy && stage2_out_remain_cycle == 0) || !stage2_data_vld);
 
     assign  read_fbk_rdy    = (stage1_out_rdy || !stage1_data_vld);
 
@@ -274,22 +266,13 @@ module binary_func_unit    #(parameter NUM_REG              = 8,
     
     always@(posedge clk or negedge rst_n) begin
         if (~rst_n) begin
-            if (DELAY != 0) begin
-`ifdef RAND_DELAY
-                stage1_out_remain_cycle <= $random();
-`else
-                stage1_out_remain_cycle <= DELAY;
-`endif
-            end
-            else
-                stage1_out_remain_cycle <= 0;
+            stage1_out_remain_cycle <= stage1_delay;
         end
         else if (stage1_data_vld && stage1_sb_vld && stage1_out_remain_cycle > 0) begin
             stage1_out_remain_cycle <= stage1_out_remain_cycle-1;
         end
         else if (stage1_out_vld && stage1_out_rdy) begin
-            if (DELAY != 0)
-                stage1_out_remain_cycle <= DELAY;
+            stage1_out_remain_cycle <= stage1_delay;
         end
     end
     
@@ -327,22 +310,13 @@ module binary_func_unit    #(parameter NUM_REG              = 8,
     
     always@(posedge clk or negedge rst_n) begin
         if (~rst_n) begin
-            if (DELAY != 0) begin
-`ifdef RAND_DELAY
-                stage2_out_remain_cycle <= $random();
-`else
-                stage2_out_remain_cycle <= DELAY;
-`endif
-            end
-            else
-                stage2_out_remain_cycle <= 0;
+            stage2_out_remain_cycle <= stage2_delay;
         end
         else if (stage2_data_vld && stage2_out_remain_cycle > 0) begin
             stage2_out_remain_cycle <= stage2_out_remain_cycle-1;
         end
         else if (stage2_out_vld && stage2_out_rdy) begin
-            if (DELAY != 0)
-                stage2_out_remain_cycle <= DELAY;
+            stage2_out_remain_cycle <= stage2_delay;
         end
     end
     

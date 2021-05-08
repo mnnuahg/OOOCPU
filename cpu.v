@@ -8,32 +8,38 @@ module cpu  #   (parameter  REG_BIT         = 16,
                  parameter  PC_BIT          = 8,
                  parameter  REG_ID_BIT      = $clog2(NUM_REG),
                  parameter  TAG_ID_BIT      = $clog2(NUM_TAG),
-                 parameter  FU_ID_BIT       = $clog2(NUM_FU))
+                 parameter  FU_ID_BIT       = $clog2(NUM_FU),
+                 parameter  FU_DELAY_BIT    = 3)
 (
-    input                               clk,
-    input                               rst_n,
+    input                                   clk,
+    input                                   rst_n,
     
-    output                              fetch_vld,
-    input                               fetch_rdy,
-    output reg  [INST_ID_BIT    -1:0]   fetch_id,
-    output reg  [PC_BIT         -1:0]   fetch_pc,
+    output                                  fetch_vld,
+    input                                   fetch_rdy,
+    output reg  [INST_ID_BIT        -1:0]   fetch_id,
+    output reg  [PC_BIT             -1:0]   fetch_pc,
     
-    input                               inst_vld,
-    output                              inst_rdy,
-    input                               inst_last,
-    input       [FU_ID_BIT      -1:0]   inst_op,
-    input       [INST_ID_BIT    -1:0]   inst_id,
-    input       [TAG_ID_BIT     -1:0]   inst_dst_reg,
-    input       [TAG_ID_BIT     -1:0]   inst_src_reg0,
-    input       [TAG_ID_BIT     -1:0]   inst_src_reg1,
-    input       [IMM_BIT        -1:0]   inst_imm,
+    input                                   inst_vld,
+    output                                  inst_rdy,
+    input                                   inst_last,
+    input       [FU_ID_BIT          -1:0]   inst_op,
+    input       [INST_ID_BIT        -1:0]   inst_id,
+    input       [TAG_ID_BIT         -1:0]   inst_dst_reg,
+    input       [TAG_ID_BIT         -1:0]   inst_src_reg0,
+    input       [TAG_ID_BIT         -1:0]   inst_src_reg1,
+    input       [IMM_BIT            -1:0]   inst_imm,
     
-    output                              write_mem_vld,
-    input                               write_mem_rdy,
-    output      [REG_BIT        -1:0]   write_mem_addr,
-    output      [REG_BIT        -1:0]   write_mem_data,
+    output                                  write_mem_vld,
+    input                                   write_mem_rdy,
+    output      [REG_BIT            -1:0]   write_mem_addr,
+    output      [REG_BIT            -1:0]   write_mem_data,
     
-    output                              exec_finish
+    // Just for random test
+    input       [NUM_FU*FU_DELAY_BIT-1:0]   fu_stage0_delays,
+    input       [NUM_FU*FU_DELAY_BIT-1:0]   fu_stage1_delays,
+    input       [NUM_FU*FU_DELAY_BIT-1:0]   fu_stage2_delays,
+    
+    output                                  exec_finish
 );
 
     reg     last_inst_issued;
@@ -175,7 +181,6 @@ module cpu  #   (parameter  REG_BIT         = 16,
                             .FUNC               (0),
                             .ISSUE_FIFO_SIZE    (ISSUE_FIFO_SIZE),
                             .DELAY_BIT          (3),
-                            .DELAY              (4),
                             .FOLLOW_ISSUE_ORDER (1))
     st_fu(  .clk                (clk),
             .rst_n              (rst_n),
@@ -209,6 +214,10 @@ module cpu  #   (parameter  REG_BIT         = 16,
             .write_back_addr    (write_mem_addr),
             .write_back_val     (write_mem_data),
             
+            .stage0_delay       (fu_stage0_delays       [0*FU_DELAY_BIT+:FU_DELAY_BIT]),
+            .stage1_delay       (fu_stage1_delays       [0*FU_DELAY_BIT+:FU_DELAY_BIT]),
+            .stage2_delay       (fu_stage2_delays       [0*FU_DELAY_BIT+:FU_DELAY_BIT]),
+            
             .idle               (fu_idle                [0]));
             
     assign  fu_write_reg_id_vld [0] = 1'b0;
@@ -223,7 +232,6 @@ module cpu  #   (parameter  REG_BIT         = 16,
                                     .FUNC               (i),
                                     .ISSUE_FIFO_SIZE    (ISSUE_FIFO_SIZE),
                                     .DELAY_BIT          (3),
-                                    .DELAY              (4),
                                     .FOLLOW_ISSUE_ORDER (0))
             fu  (   .clk                (clk),
                     .rst_n              (rst_n),
@@ -256,6 +264,10 @@ module cpu  #   (parameter  REG_BIT         = 16,
                     .write_back_reg_id  (fu_write_reg_id        [i*REG_ID_BIT+:REG_ID_BIT]),
                     .write_back_addr    (fu_write_addr          [i*REG_BIT   +:REG_BIT   ]),
                     .write_back_val     (fu_write_data          [i*REG_BIT   +:REG_BIT   ]),
+                    
+                    .stage0_delay       (fu_stage0_delays       [i*FU_DELAY_BIT+:FU_DELAY_BIT]),
+                    .stage1_delay       (fu_stage1_delays       [i*FU_DELAY_BIT+:FU_DELAY_BIT]),
+                    .stage2_delay       (fu_stage2_delays       [i*FU_DELAY_BIT+:FU_DELAY_BIT]),
                     
                     .idle               (fu_idle                [i]));
         end

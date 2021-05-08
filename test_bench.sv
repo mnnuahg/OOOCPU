@@ -7,6 +7,7 @@ module test_bench();
     localparam  INST_ID_BIT     = 8;
     localparam  NUM_FU          = 8;
     localparam  PC_BIT          = 8;
+    localparam  FU_DELAY_BIT    = 3;
     
     localparam  REG_ID_BIT      = $clog2(NUM_REG);
     localparam  TAG_ID_BIT      = $clog2(NUM_TAG);
@@ -25,7 +26,7 @@ module test_bench();
     localparam  NUM_INST        = 32;
     localparam  RAND_GEN_INST   = 1;
     
-    function automatic random_gen_inst(ref bit     [INST_BIT       -1:0]   inst    [NUM_INST-1:0], ref integer seed);
+    function automatic random_gen_inst(ref bit [INST_BIT       -1:0] inst [NUM_INST-1:0], ref integer seed);
         bit [NUM_TAG    -1:0]   reg_initialized;
         
         bit [OP_BIT     -1:0]   op;
@@ -74,7 +75,7 @@ module test_bench();
         end
     endfunction
     
-    function print_inst_golden(bit     [INST_BIT       -1:0]   inst    [NUM_INST-1:0]);
+    function print_inst_golden(bit [INST_BIT       -1:0] inst [NUM_INST-1:0]);
         logic   [REG_BIT    -1:0]   golden_regs [NUM_TAG-1:0];
     
         // Print expected store addr/data
@@ -125,6 +126,17 @@ module test_bench();
         end
     endfunction
     
+    function automatic random_gen_delay(ref bit [NUM_FU*FU_DELAY_BIT-1:0] fu_stage0_delays,
+                                        ref bit [NUM_FU*FU_DELAY_BIT-1:0] fu_stage1_delays,
+                                        ref bit [NUM_FU*FU_DELAY_BIT-1:0] fu_stage2_delays,
+                                        ref integer seed);
+        for (int i=0; i<NUM_FU; i++) begin
+            fu_stage0_delays[i*FU_DELAY_BIT+:FU_DELAY_BIT] = $random(seed);
+            fu_stage1_delays[i*FU_DELAY_BIT+:FU_DELAY_BIT] = $random(seed);
+            fu_stage2_delays[i*FU_DELAY_BIT+:FU_DELAY_BIT] = $random(seed);
+        end
+    endfunction
+    
     integer seed;
 
     bit     clk;
@@ -150,6 +162,10 @@ module test_bench();
     wire    [REG_BIT        -1:0]   write_mem_addr;
     wire    [REG_BIT        -1:0]   write_mem_data;
     
+    bit     [NUM_FU*FU_DELAY_BIT-1:0]   fu_stage0_delays;
+    bit     [NUM_FU*FU_DELAY_BIT-1:0]   fu_stage1_delays;
+    bit     [NUM_FU*FU_DELAY_BIT-1:0]   fu_stage2_delays;
+    
     wire                            exec_finish;
     
     cpu #(  .REG_BIT        (REG_BIT),
@@ -158,7 +174,8 @@ module test_bench();
             .ISSUE_FIFO_SIZE(ISSUE_FIFO_SIZE),
             .INST_ID_BIT    (INST_ID_BIT),
             .NUM_FU         (NUM_FU),
-            .PC_BIT         (PC_BIT))
+            .PC_BIT         (PC_BIT),
+            .FU_DELAY_BIT   (FU_DELAY_BIT))
             
     dut (   .clk            (clk),
             .rst_n          (rst_n),
@@ -182,6 +199,10 @@ module test_bench();
             .write_mem_rdy  (write_mem_rdy),
             .write_mem_addr (write_mem_addr),
             .write_mem_data (write_mem_data),
+            
+            .fu_stage0_delays   (fu_stage0_delays),
+            .fu_stage1_delays   (fu_stage1_delays),
+            .fu_stage2_delays   (fu_stage2_delays),
             
             .exec_finish    (exec_finish));
             
@@ -207,8 +228,8 @@ module test_bench();
     initial begin
         seed        = 111;
     
-        clk         = 1'b0;
-        rst_n       = 1'b0;
+        clk         = 1'b1;
+        rst_n       = 1'b1;
         cur_pc      = 0;
         cur_pc_vld  = 1'b0;
         inst_id     = 0;
@@ -231,11 +252,21 @@ module test_bench();
         
         print_inst_golden(inst);
         
+        random_gen_delay(fu_stage0_delays, fu_stage1_delays, fu_stage2_delays, seed);
+        
+        // Initialize delays in function units...
+        #0.1
+        rst_n       = 1'b0;
+        
         #0.1
         rst_n       = 1'b1;
         
         #2000
         $finish;
+    end
+    
+    always@(posedge clk) begin
+        random_gen_delay(fu_stage0_delays, fu_stage1_delays, fu_stage2_delays, seed);
     end
     
     always@(posedge clk) begin: gen_more_inst
