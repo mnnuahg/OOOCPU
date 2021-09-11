@@ -2,10 +2,10 @@ module test_bench();
     localparam  NUM_REG         = 16;
     localparam  NUM_TAG         = 4;
     localparam  REG_BIT         = 16;
-    localparam  IMM_BIT         = 4;
+    localparam  IMM_BIT         = 8;
     localparam  ISSUE_FIFO_SIZE = 4;
     localparam  INST_ID_BIT     = 8;
-    localparam  NUM_FU          = 8;
+    localparam  NUM_FU          = 7;
     localparam  PC_BIT          = 8;
     localparam  FU_DELAY_BIT    = 3;
     
@@ -15,13 +15,13 @@ module test_bench();
     localparam  INST_BIT        = OP_BIT+TAG_ID_BIT*3+IMM_BIT;
     
     localparam  OP_ST           = 3'd0;
-    localparam  OP_ADD          = 3'd1;
+    localparam  OP_CMP_GT       = 3'd1;
     localparam  OP_ADD_IMM      = 3'd2;
-    localparam  OP_SHL_IMM      = 3'd3;
-    localparam  OP_SHR_IMM      = 3'd4;
-    localparam  OP_SHL          = 3'd5;
-    localparam  OP_SHR          = 3'd6;
-    localparam  OP_MUL          = 3'd7;
+    localparam  OP_ADD          = 3'd3;
+    localparam  OP_SHL          = 3'd4;
+    localparam  OP_SHR          = 3'd5;
+    localparam  OP_MUL          = 3'd6;
+    localparam  OP_BZ           = 3'd7;
     
     localparam  NUM_INST        = 32;
     localparam  RAND_GEN_INST   = 1;
@@ -34,49 +34,93 @@ module test_bench();
         bit [TAG_ID_BIT -1:0]   src_reg0;
         bit [TAG_ID_BIT -1:0]   src_reg1;
         bit [IMM_BIT    -1:0]   imm;
+        bit [NUM_INST   -1:0]   is_br_target;
+        bit [NUM_INST   -1:0]   is_br_inst;
         
-        reg_initialized [0] = {{NUM_TAG-1{1'b0}}, 1'b1};
+        is_br_target        = {NUM_INST{1'b0}};
+        is_br_inst          = {NUM_INST{1'b0}};
+
+        // Just initialize all register at start otherwise it's hard to check
+        // whether a register is initialized if there are branches
+        for (int i=1; i<NUM_TAG; i++) begin
+            op = OP_ADD_IMM;
+            src_reg0 = 0;
+            src_reg1 = 0;
+            imm = $random(seed);
+            dst_reg = i;
+            
+            inst[i-1] = {op, dst_reg, src_reg1, src_reg0, imm};
+            $display("inst[%d] = {%d'd%d, %d'd%d, %d'd%d, %d'd%d, %d'd%d};", i-1, OP_BIT, op, TAG_ID_BIT, dst_reg, TAG_ID_BIT, src_reg1, TAG_ID_BIT, src_reg0, IMM_BIT, imm);
+        end
         
-        for (int i=0; i<NUM_INST; i++) begin
-            // Only gen store/add/add_imm/shl_imm otherwise the result will likely be 0
+        for (int i=NUM_TAG-1; i<NUM_INST; i++) begin
+            // Don't generate OP_BZ here, just append a BZ after CMP_GT
             // Use op = $random(seed) % 3; won't work, don't know why
             do begin
                 op  = $random(seed);
-            end while(op >= 4);
+            end while (op == OP_BZ || (op == OP_CMP_GT && (i >= NUM_INST-2 || is_br_target[i+1])));
             
-            do begin
+            if (op == OP_CMP_GT) begin
                 src_reg0 = $random(seed);
-            end while(!reg_initialized[src_reg0]);
-            
-            if (op != OP_ADD_IMM && op != OP_SHL_IMM && op != OP_SHR_IMM) begin
-                do begin
-                    src_reg1 = $random(seed);
-                end while(!reg_initialized[src_reg1]);
+                src_reg1 = $random(seed);
                 imm = 0;
-            end
-            else begin
-                src_reg1 = 0;
-                imm = $random(seed);
-            end
-            
-            if (op == OP_ST) begin
-                dst_reg = 0;
-            end
-            else begin
                 do begin
                     dst_reg = $random(seed);
                 end while (dst_reg == 0);
+                
+                inst[i] = {op, dst_reg, src_reg1, src_reg0, imm};
+                $display("inst[%d] = {%d'd%d, %d'd%d, %d'd%d, %d'd%d, %d'd%d};", i, OP_BIT, op, TAG_ID_BIT, dst_reg, TAG_ID_BIT, src_reg1, TAG_ID_BIT, src_reg0, IMM_BIT, imm);
+                
+                op = OP_BZ;
+                src_reg0 = dst_reg;
+                src_reg1 = 0;
+                dst_reg = 0;
+                do begin
+                    imm = $random()%NUM_INST;
+                end while (imm > NUM_INST || imm == i+1 || (imm < i && is_br_inst[i]));
+                
+                inst[i+1] = {op, dst_reg, src_reg1, src_reg0, imm};
+                $display("inst[%d] = {%d'd%d, %d'd%d, %d'd%d, %d'd%d, %d'd%d};", i+1, OP_BIT, op, TAG_ID_BIT, dst_reg, TAG_ID_BIT, src_reg1, TAG_ID_BIT, src_reg0, IMM_BIT, imm);
+                is_br_inst[i+1] = 1'b1;
+                is_br_target[imm] = 1'b1;
             end
-            
-            reg_initialized [dst_reg] = 1'b1;
-            inst            [i      ] = {op, dst_reg, src_reg1, src_reg0, imm};
-            
-            $display("inst[%d] = {%d'd%d, %d'd%d, %d'd%d, %d'd%d, %d'd%d};", i, OP_BIT, op, TAG_ID_BIT, dst_reg, TAG_ID_BIT, src_reg1, TAG_ID_BIT, src_reg0, IMM_BIT, imm);
+            else if (op == OP_ST) begin
+                src_reg0 = $random(seed);
+                src_reg1 = $random(seed);
+                imm = 0;
+                dst_reg = 0;
+                
+                inst[i] = {op, dst_reg, src_reg1, src_reg0, imm};
+                $display("inst[%d] = {%d'd%d, %d'd%d, %d'd%d, %d'd%d, %d'd%d};", i, OP_BIT, op, TAG_ID_BIT, dst_reg, TAG_ID_BIT, src_reg1, TAG_ID_BIT, src_reg0, IMM_BIT, imm);
+            end
+            else if (op == OP_ADD || op == OP_SHL || op == OP_SHR || op == OP_MUL) begin
+                src_reg0 = $random(seed);
+                src_reg1 = $random(seed);
+                imm = 0;
+                do begin
+                    dst_reg = $random(seed);
+                end while (dst_reg == 0);
+                
+                inst[i] = {op, dst_reg, src_reg1, src_reg0, imm};
+                $display("inst[%d] = {%d'd%d, %d'd%d, %d'd%d, %d'd%d, %d'd%d};", i, OP_BIT, op, TAG_ID_BIT, dst_reg, TAG_ID_BIT, src_reg1, TAG_ID_BIT, src_reg0, IMM_BIT, imm);
+            end
+            else begin
+                src_reg0 = $random(seed);
+                src_reg1 = 0;
+                imm = $random(seed);
+                do begin
+                    dst_reg = $random(seed);
+                end while (dst_reg == 0);
+                
+                inst[i] = {op, dst_reg, src_reg1, src_reg0, imm};
+                $display("inst[%d] = {%d'd%d, %d'd%d, %d'd%d, %d'd%d, %d'd%d};", i, OP_BIT, op, TAG_ID_BIT, dst_reg, TAG_ID_BIT, src_reg1, TAG_ID_BIT, src_reg0, IMM_BIT, imm);
+            end
         end
     endfunction
     
-    function print_inst_golden(bit [INST_BIT       -1:0] inst [NUM_INST-1:0]);
+    function print_inst_golden(bit [INST_BIT       -1:0] inst [NUM_INST-1:0], int num_cycle);
         logic   [REG_BIT    -1:0]   golden_regs [NUM_TAG-1:0];
+        int pc;
     
         // Print expected store addr/data
         golden_regs [0] = 0;
@@ -84,7 +128,9 @@ module test_bench();
             golden_regs [i] = {REG_BIT{1'bx}};
         end
         
-        for (int pc=0; pc<NUM_INST; pc++) begin
+        pc = 0;
+        
+        for (int cycle=0; cycle<num_cycle && pc < NUM_INST; cycle++) begin
             bit [OP_BIT     -1:0]   op;
             bit [TAG_ID_BIT -1:0]   dst_reg;
             bit [TAG_ID_BIT -1:0]   src_reg0;
@@ -98,12 +144,17 @@ module test_bench();
             src_reg1    = inst[pc][IMM_BIT+TAG_ID_BIT  +:TAG_ID_BIT];
             src_reg0    = inst[pc][IMM_BIT             +:TAG_ID_BIT];
             imm         = inst[pc][0                   +:IMM_BIT   ];
+            
+            $write("pc: %d, reg: ", pc);
+            for (int i=0; i<NUM_TAG; i++) begin
+                $write("%d, ", golden_regs[i]);
+            end
+            $write("\n");
 
             case (op)
                 OP_ST:      exec_res    = golden_regs[src_reg1];
+                OP_CMP_GT:  exec_res    = golden_regs[src_reg0] >  golden_regs[src_reg1] ? 1 : 0;
                 OP_ADD_IMM: exec_res    = golden_regs[src_reg0] +  imm;
-                OP_SHL_IMM: exec_res    = golden_regs[src_reg0] << imm;
-                OP_SHR_IMM: exec_res    = golden_regs[src_reg0] >> imm;
                 OP_ADD:     exec_res    = golden_regs[src_reg0] +  golden_regs[src_reg1];
                 OP_SHL:     exec_res    = golden_regs[src_reg0] << golden_regs[src_reg1];
                 OP_SHR:     exec_res    = golden_regs[src_reg0] >> golden_regs[src_reg1];
@@ -112,7 +163,16 @@ module test_bench();
             endcase
             
             if (op == OP_ST) begin
-                $display("Golden: Store addr %x, data %d", golden_regs[src_reg0], golden_regs[src_reg1]);
+                $display("Golden(%d): Store addr %x, data %d", cycle, golden_regs[src_reg0], golden_regs[src_reg1]);
+                pc = pc+1;
+            end
+            else if (op == OP_BZ) begin
+                if (golden_regs[src_reg0] == 0) begin
+                    pc = imm;
+                end
+                else begin
+                    pc = pc+1;
+                end
             end
             else begin
                 //if (op == OP_ADD) begin
@@ -122,6 +182,7 @@ module test_bench();
                 //    $display("Golden[%d]: dst_reg %d, src_reg0 %d", pc, exec_res, golden_regs[src_reg0]);
                 //end
                 golden_regs[dst_reg]    = exec_res;
+                pc = pc+1;
             end
         end
     endfunction
@@ -159,6 +220,7 @@ module test_bench();
     
     wire                            write_mem_vld;
     wire                            write_mem_rdy   = 1'b1;
+    wire    [INST_ID_BIT    -1:0]   write_mem_id;
     wire    [REG_BIT        -1:0]   write_mem_addr;
     wire    [REG_BIT        -1:0]   write_mem_data;
     
@@ -169,13 +231,22 @@ module test_bench();
     wire                            exec_finish;
     
     cpu #(  .REG_BIT        (REG_BIT),
+            .IMM_BIT        (IMM_BIT),
             .NUM_REG        (NUM_REG),
             .NUM_TAG        (NUM_TAG),
             .ISSUE_FIFO_SIZE(ISSUE_FIFO_SIZE),
             .INST_ID_BIT    (INST_ID_BIT),
             .NUM_FU         (NUM_FU),
             .PC_BIT         (PC_BIT),
-            .FU_DELAY_BIT   (FU_DELAY_BIT))
+            .FU_DELAY_BIT   (FU_DELAY_BIT),
+            .OP_ST          (OP_ST),
+            .OP_CMP_GT      (OP_CMP_GT),
+            .OP_ADD_IMM     (OP_ADD_IMM),
+            .OP_ADD         (OP_ADD),
+            .OP_SHL         (OP_SHL),
+            .OP_SHR         (OP_SHR),
+            .OP_MUL         (OP_MUL),
+            .OP_BZ          (OP_BZ))
             
     dut (   .clk            (clk),
             .rst_n          (rst_n),
@@ -197,6 +268,7 @@ module test_bench();
             
             .write_mem_vld  (write_mem_vld),
             .write_mem_rdy  (write_mem_rdy),
+            .write_mem_id   (write_mem_id),
             .write_mem_addr (write_mem_addr),
             .write_mem_data (write_mem_data),
             
@@ -215,7 +287,7 @@ module test_bench();
     
     wire    [INST_BIT       -1:0]   cur_inst    = inst  [cur_pc];
     
-    assign  fetch_rdy       = !cur_pc_vld || inst_rdy;
+    assign  fetch_rdy       = 1'b1;
     
     assign  inst_vld        = cur_pc_vld;
     assign  inst_last       = cur_pc == NUM_INST-1;
@@ -226,7 +298,7 @@ module test_bench();
     assign  inst_imm        = cur_inst  [0                   +:IMM_BIT   ];
     
     initial begin
-        seed        = 111;
+        seed        = 567;
     
         clk         = 1'b1;
         rst_n       = 1'b1;
@@ -239,18 +311,20 @@ module test_bench();
                 inst[i] = {INST_BIT{1'b0}};
             end
         
-            inst[0] = {OP_ADD_IMM, TAG_ID_BIT'(1), TAG_ID_BIT'(0), TAG_ID_BIT'(0), IMM_BIT'(1)};
-            inst[1] = {OP_SHL    , TAG_ID_BIT'(2), TAG_ID_BIT'(1), TAG_ID_BIT'(1), IMM_BIT'(0)};
-            inst[2] = {OP_ADD_IMM, TAG_ID_BIT'(1), TAG_ID_BIT'(0), TAG_ID_BIT'(0), IMM_BIT'(2)};
-            inst[3] = {OP_SHL    , TAG_ID_BIT'(1), TAG_ID_BIT'(1), TAG_ID_BIT'(1), IMM_BIT'(0)};
-            inst[4] = {OP_ADD    , TAG_ID_BIT'(1), TAG_ID_BIT'(1), TAG_ID_BIT'(2), IMM_BIT'(0)};
-            inst[5] = {OP_ST     , TAG_ID_BIT'(0), TAG_ID_BIT'(0), TAG_ID_BIT'(1), IMM_BIT'(0)};
+            //         op        , dst_reg       , src_reg1      , src_reg0      , imm
+            inst[0] = {OP_ADD_IMM, TAG_ID_BIT'(1), TAG_ID_BIT'(0), TAG_ID_BIT'(0), IMM_BIT'( 0)};
+            inst[1] = {OP_ADD_IMM, TAG_ID_BIT'(2), TAG_ID_BIT'(0), TAG_ID_BIT'(0), IMM_BIT'(10)};
+            inst[2] = {OP_ST     , TAG_ID_BIT'(0), TAG_ID_BIT'(2), TAG_ID_BIT'(1), IMM_BIT'( 0)};
+            inst[3] = {OP_ADD_IMM, TAG_ID_BIT'(1), TAG_ID_BIT'(0), TAG_ID_BIT'(1), IMM_BIT'( 1)};
+            inst[4] = {OP_CMP_GT , TAG_ID_BIT'(3), TAG_ID_BIT'(2), TAG_ID_BIT'(1), IMM_BIT'( 0)};
+            inst[5] = {OP_BZ     , TAG_ID_BIT'(0), TAG_ID_BIT'(0), TAG_ID_BIT'(3), IMM_BIT'( 2)};
+            inst[6] = {OP_ST     , TAG_ID_BIT'(0), TAG_ID_BIT'(2), TAG_ID_BIT'(1), IMM_BIT'( 0)};
         end
         else begin
             random_gen_inst(inst, seed);
         end
         
-        print_inst_golden(inst);
+        print_inst_golden(inst, 300);
         
         random_gen_delay(fu_stage0_delays, fu_stage1_delays, fu_stage2_delays, seed);
         
@@ -279,7 +353,7 @@ module test_bench();
                 #0.1
                 rst_n   = 1'b0;
                 random_gen_inst(inst, seed);
-                print_inst_golden(inst);
+                print_inst_golden(inst, 300);
                 
                 #0.1
                 rst_n   = 1'b1;
@@ -294,7 +368,7 @@ module test_bench();
         if (~rst_n) disable print_store;
         
         if (write_mem_vld && write_mem_rdy) begin
-            $display("Simulation: Store addr %x, data %d", write_mem_addr, write_mem_data);
+            $display("Simulation(%d): Store addr %x, data %d", write_mem_id, write_mem_addr, write_mem_data);
         end
     end
     

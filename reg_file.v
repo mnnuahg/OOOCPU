@@ -26,18 +26,18 @@ module reg_file #(  parameter NUM_REG       = 8,
     localparam  REG_ID_BIT  = $clog2(NUM_REG);
     localparam  PORT_ID_BIT = $clog2(NUM_W_PORT);
 
-    reg     [REG_BIT    -1:0]   regs                [NUM_REG    -1:0];
+    reg     [REG_BIT            -1:0]   regs                [NUM_REG    -1:0];
     
     
-    reg                         rd_addrs_vld        [NUM_R_PORT -1:0];
-    reg     [REG_ID_BIT -1:0]   rd_addr0s           [NUM_R_PORT -1:0];
-    reg     [REG_ID_BIT -1:0]   rd_addr1s           [NUM_R_PORT -1:0];
+    reg                                 rd_addrs_vld        [NUM_R_PORT -1:0];
+    reg     [REG_ID_BIT         -1:0]   rd_addr0s           [NUM_R_PORT -1:0];
+    reg     [REG_ID_BIT         -1:0]   rd_addr1s           [NUM_R_PORT -1:0];
     
-    wire    [NUM_REG    -1:0]   write_mask_of_port  [NUM_W_PORT -1:0];
-    wire    [NUM_W_PORT -1:0]   port_write_to_reg   [NUM_REG    -1:0];
+    wire    [NUM_REG            -1:0]   write_mask_of_port  [NUM_W_PORT -1:0];
+    wire    [(1<<PORT_ID_BIT)   -1:0]   port_write_to_reg   [NUM_REG    -1:0];
     
-    wire                        reg_wr_vld          [NUM_REG    -1:0];
-    wire    [PORT_ID_BIT-1:0]   reg_wr_data_sel     [NUM_REG    -1:0];
+    wire                                reg_wr_vld          [NUM_REG    -1:0];
+    wire    [PORT_ID_BIT        -1:0]   reg_wr_data_sel     [NUM_REG    -1:0];
     
     assign  wr_rdy  = {NUM_W_PORT{1'b1}};
     
@@ -80,6 +80,9 @@ module reg_file #(  parameter NUM_REG       = 8,
             for (j=0; j<NUM_W_PORT; j=j+1) begin: gen_port_write_to_reg_i_j
                 assign port_write_to_reg[i][j] = write_mask_of_port[j][i];
             end
+            for (j=NUM_W_PORT; j<(1<<PORT_ID_BIT); j=j+1) begin: gen_port_write_to_reg_i_
+                assign port_write_to_reg[i][j] = 1'b0;
+            end
         end
         
         assign  reg_wr_vld      [0] = 0;
@@ -88,7 +91,7 @@ module reg_file #(  parameter NUM_REG       = 8,
         for (i=1; i<NUM_REG; i=i+1) begin: gen_wr_sel
             assign  reg_wr_vld[i]   = |port_write_to_reg[i];
             
-            leading_zero_one_cnt    #(  .DATA_WIDTH (NUM_W_PORT),
+            leading_zero_one_cnt    #(  .DATA_WIDTH (1<<PORT_ID_BIT),
                                         .COUNT_ZERO (1))
             gen_wr_data_sel (   .in (port_write_to_reg  [i]),
                                 .cnt(reg_wr_data_sel    [i]));
