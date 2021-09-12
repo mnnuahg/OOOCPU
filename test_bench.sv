@@ -1,3 +1,5 @@
+`timescale 1ns/1ps
+
 module test_bench();
     localparam  NUM_REG         = 16;
     localparam  NUM_TAG         = 4;
@@ -24,9 +26,11 @@ module test_bench();
     localparam  OP_BZ           = 3'd7;
     
     localparam  NUM_INST        = 32;
-    localparam  RAND_GEN_INST   = 1;
+    localparam  NUM_CYCLE       = 1000;
+    localparam  NUM_TEST        = 10;
+    localparam  RAND_GEN_INST   = 0;
     
-    function automatic random_gen_inst(ref bit [INST_BIT       -1:0] inst [NUM_INST-1:0], ref integer seed);
+    function automatic random_gen_inst(ref bit [INST_BIT-1:0] inst [NUM_INST-1:0], ref integer seed);
         bit [NUM_TAG    -1:0]   reg_initialized;
         
         bit [OP_BIT     -1:0]   op;
@@ -83,6 +87,8 @@ module test_bench();
                 $display("inst[%d] = {%d'd%d, %d'd%d, %d'd%d, %d'd%d, %d'd%d};", i+1, OP_BIT, op, TAG_ID_BIT, dst_reg, TAG_ID_BIT, src_reg1, TAG_ID_BIT, src_reg0, IMM_BIT, imm);
                 is_br_inst[i+1] = 1'b1;
                 is_br_target[imm] = 1'b1;
+                
+                i++;
             end
             else if (op == OP_ST) begin
                 src_reg0 = $random(seed);
@@ -121,6 +127,7 @@ module test_bench();
     function print_inst_golden(bit [INST_BIT       -1:0] inst [NUM_INST-1:0], int num_cycle);
         logic   [REG_BIT    -1:0]   golden_regs [NUM_TAG-1:0];
         int pc;
+        int cycle;
     
         // Print expected store addr/data
         golden_regs [0] = 0;
@@ -130,7 +137,7 @@ module test_bench();
         
         pc = 0;
         
-        for (int cycle=0; cycle<num_cycle && pc < NUM_INST; cycle++) begin
+        for (cycle=0; cycle<num_cycle && pc < NUM_INST; cycle++) begin
             bit [OP_BIT     -1:0]   op;
             bit [TAG_ID_BIT -1:0]   dst_reg;
             bit [TAG_ID_BIT -1:0]   src_reg0;
@@ -145,11 +152,11 @@ module test_bench();
             src_reg0    = inst[pc][IMM_BIT             +:TAG_ID_BIT];
             imm         = inst[pc][0                   +:IMM_BIT   ];
             
-            $write("pc: %d, reg: ", pc);
-            for (int i=0; i<NUM_TAG; i++) begin
-                $write("%d, ", golden_regs[i]);
-            end
-            $write("\n");
+            //$write("pc: %d, reg: ", pc);
+            //for (int i=0; i<NUM_TAG; i++) begin
+            //    $write("%d, ", golden_regs[i]);
+            //end
+            //$write("\n");
 
             case (op)
                 OP_ST:      exec_res    = golden_regs[src_reg1];
@@ -185,6 +192,14 @@ module test_bench();
                 pc = pc+1;
             end
         end
+        
+        if (pc == NUM_INST) begin
+            $display("Golden(%d): Execution finish", cycle);
+        end
+        else begin
+            $display("Golden(%d): Execution timeout", cycle);
+        end
+        
     endfunction
     
     function automatic random_gen_delay(ref bit [NUM_FU*FU_DELAY_BIT-1:0] fu_stage0_delays,
@@ -198,10 +213,14 @@ module test_bench();
         end
     endfunction
     
-    integer seed;
+    integer inst_seed;
+    integer delay_seed;
 
     bit     clk;
     bit     rst_n;
+    
+    int     clk_cnt;
+    int     test_cnt;
     
     wire                            fetch_vld;
     wire                            fetch_rdy;
@@ -298,13 +317,15 @@ module test_bench();
     assign  inst_imm        = cur_inst  [0                   +:IMM_BIT   ];
     
     initial begin
-        seed        = 567;
+        inst_seed   = 567;
+        delay_seed  = 0;
     
-        clk         = 1'b1;
+        clk         = 1'b0;
         rst_n       = 1'b1;
         cur_pc      = 0;
         cur_pc_vld  = 1'b0;
         inst_id     = 0;
+        test_cnt    = 0;
         
         if (!RAND_GEN_INST) begin
             for (int i=0; i<NUM_INST; i++) begin
@@ -321,26 +342,23 @@ module test_bench();
             inst[6] = {OP_ST     , TAG_ID_BIT'(0), TAG_ID_BIT'(2), TAG_ID_BIT'(1), IMM_BIT'( 0)};
         end
         else begin
-            random_gen_inst(inst, seed);
+            random_gen_inst(inst, inst_seed);
         end
         
         print_inst_golden(inst, 300);
         
-        random_gen_delay(fu_stage0_delays, fu_stage1_delays, fu_stage2_delays, seed);
+        random_gen_delay(fu_stage0_delays, fu_stage1_delays, fu_stage2_delays, delay_seed);
         
         // Initialize delays in function units...
         #0.1
         rst_n       = 1'b0;
         
-        #0.1
+        #1
         rst_n       = 1'b1;
-        
-        #2000
-        $finish;
     end
     
     always@(posedge clk) begin
-        random_gen_delay(fu_stage0_delays, fu_stage1_delays, fu_stage2_delays, seed);
+        random_gen_delay(fu_stage0_delays, fu_stage1_delays, fu_stage2_delays, delay_seed);
     end
     
     always@(posedge clk) begin: gen_more_inst
@@ -349,13 +367,33 @@ module test_bench();
         if (exec_finish) begin
             $display("Time %d: Execution finished", $time);
             
-            if (RAND_GEN_INST) begin
+            if (RAND_GEN_INST && test_cnt < NUM_TEST) begin
                 #0.1
                 rst_n   = 1'b0;
-                random_gen_inst(inst, seed);
+                random_gen_inst(inst, inst_seed);
                 print_inst_golden(inst, 300);
+                test_cnt = test_cnt+1;
+                delay_seed = 0;
                 
+                #2
+                rst_n   = 1'b1;
+            end
+            else begin
+                $finish;
+            end
+        end
+        else if (clk_cnt > NUM_CYCLE) begin
+            $display("Time %d: Execution timeout", $time);
+            
+            if (RAND_GEN_INST && test_cnt < NUM_TEST) begin
                 #0.1
+                rst_n   = 1'b0;
+                random_gen_inst(inst, inst_seed);
+                print_inst_golden(inst, 300);
+                test_cnt = test_cnt+1;
+                delay_seed = 0;
+                
+                #2
                 rst_n   = 1'b1;
             end
             else begin
@@ -372,18 +410,31 @@ module test_bench();
         end
     end
     
-    always@(posedge clk) begin: fetch_response
-        if (~rst_n) disable fetch_response;
-        
-        if (fetch_vld && fetch_rdy) begin
-            #0.1
-            cur_pc_vld  = 1'b1;
-            cur_pc      = fetch_pc;
-            inst_id     = fetch_id;
+    always@(posedge clk or negedge rst_n) begin
+        if (~rst_n) begin
+            cur_pc_vld  <= 1'b0;
+        end
+        else if (fetch_vld && fetch_rdy) begin
+            cur_pc_vld  <= 1'b1;
         end
         else if (inst_rdy) begin
-            #0.1
-            cur_pc_vld  = 1'b0;
+            cur_pc_vld  <= 1'b0;
+        end
+    end
+    
+    always@(posedge clk) begin: fetch_response
+        if (fetch_vld && fetch_rdy) begin
+            cur_pc      <= fetch_pc;
+            inst_id     <= fetch_id;
+        end
+    end
+    
+    always@(posedge clk or negedge rst_n) begin
+        if (~rst_n) begin
+            clk_cnt <= 0;
+        end
+        else begin
+            clk_cnt <= clk_cnt+1;
         end
     end
 

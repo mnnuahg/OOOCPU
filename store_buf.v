@@ -27,13 +27,15 @@ module store_buf    #(parameter INST_ID_BIT     = 8,
     output      [ADDR_BIT       -1:0]   out_addr,
     output      [DATA_BIT       -1:0]   out_data,
     
+    output                              empty,
+    
     input                               br_pred_vld,
     input                               br_pred_succ,
     input       [SPEC_LEVEL_BIT -1:0]   br_pred_fail_level,
     input       [SPEC_LEVEL_BIT*(SPEC_DEPTH+1)-1:0] br_pred_succ_nxt_levels
 );
 
-    reg                             vlds        [BUF_DEPTH-1:0];
+    reg     [BUF_DEPTH      -1:0]   vlds;
     reg     [INST_ID_BIT    -1:0]   ids         [BUF_DEPTH-1:0];
     reg     [ADDR_BIT       -1:0]   addrs       [BUF_DEPTH-1:0];
     reg     [DATA_BIT       -1:0]   datas       [BUF_DEPTH-1:0];
@@ -44,6 +46,8 @@ module store_buf    #(parameter INST_ID_BIT     = 8,
     reg     [PTR_BIT          :0]   cnt;
     
     wire    [SPEC_LEVEL_BIT -1:0]   br_pred_succ_nxt_level  [SPEC_DEPTH:0];
+    
+    assign  empty   = ~(|vlds);
     
     generate
         genvar i;

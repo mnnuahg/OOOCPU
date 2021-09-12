@@ -67,10 +67,13 @@ module cpu  #   (parameter  REG_BIT         = 16,
     wire    [NUM_TAG*REG_ID_BIT -1:0]   cur_tag_map;
 
     wire                        br_vld                       = inst_vld && inst_op == OP_BZ;
+    wire                        br_rdy;
     reg                         br_speculative;
     wire       [REG_ID_BIT-1:0] br_cond_reg                  = cur_tag_map[inst_src_reg0*REG_ID_BIT+:REG_ID_BIT];
     wire       [IMM_BIT   -1:0] br_target                    = inst_imm;
-    wire                        br_cond_predicted_val        = 1'b1;
+    wire                        br_cond_predicted_val        = 1'b0;
+    
+    // These depends on the branch is BZ or BNZ
     wire       [PC_BIT    -1:0] br_predicted_pc              = br_cond_predicted_val ? cur_pc + 1 : br_target;
     wire       [PC_BIT    -1:0] br_predicted_fail_pc         = br_cond_predicted_val ? br_target  : cur_pc + 1;
 
@@ -167,7 +170,7 @@ module cpu  #   (parameter  REG_BIT         = 16,
             inst_rdy    = inst_issue_rdy;
         end
         else begin
-            inst_rdy    = 1'b1;
+            inst_rdy    = !br_speculative || br_rdy;
         end
     end
 
@@ -299,6 +302,7 @@ module cpu  #   (parameter  REG_BIT         = 16,
     wire    [REG_BIT        -1:0]   stb_in_addr;
     wire    [REG_BIT        -1:0]   stb_in_data;
     wire    [SPEC_LEVEL_BIT -1:0]   stb_in_spec_level;
+    wire                            stb_empty;
     
 
     binary_func_unit    #(  .NUM_REG            (NUM_REG),
@@ -385,6 +389,8 @@ module cpu  #   (parameter  REG_BIT         = 16,
             .out_id                 (write_mem_id),
             .out_addr               (write_mem_addr),
             .out_data               (write_mem_data),
+            
+            .empty                  (stb_empty),
             
             .br_pred_vld            (br_pred_vld),
             .br_pred_succ           (br_pred_succ),
@@ -492,6 +498,7 @@ module cpu  #   (parameter  REG_BIT         = 16,
             .rst_n                  (rst_n),
             
             .br_vld                 (br_vld && br_speculative),
+            .br_rdy                 (br_rdy),
             .br_cond_reg            (br_cond_reg),
             .br_cond_predicted_val  (br_cond_predicted_val),
             .br_rollback_pc         (br_predicted_fail_pc),
@@ -513,6 +520,6 @@ module cpu  #   (parameter  REG_BIT         = 16,
             .br_pred_fail_id        (br_pred_fail_id));
             
     
-    assign  exec_finish         = last_inst_issued && (&fu_idle);
+    assign  exec_finish         = last_inst_issued && (&fu_idle) && stb_empty;
     
 endmodule

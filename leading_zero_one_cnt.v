@@ -20,9 +20,9 @@ module leading_zero_one_cnt #(  parameter DATA_WIDTH    = 16,
 
         for (i=CNT_BIT-2; i>=0; i=i-1) begin: gen_cnt
             if (COUNT_ZERO)
-                assign  cnt[i]  = ~(|stages[i][0+:1<<i]);
+                assign  cnt[i]  = cnt[CNT_BIT-1] ? 1'b0 : ~(|stages[i][0+:1<<i]);
             else
-                assign  cnt[i]  =   &stages[i][0+:1<<i];
+                assign  cnt[i]  = cnt[CNT_BIT-1] ? 1'b0 :   &stages[i][0+:1<<i];
         end
         
         for (i=CNT_BIT-3; i>=0; i=i-1) begin: gen_stage

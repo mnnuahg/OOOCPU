@@ -15,6 +15,7 @@ module spec_vector #(parameter  NUM_TAG         = 4,
     //       => What if the write back is not the branch reg but will cause a rollback?
     //          To simplify design, when rollback occurs branch_vld should also be off
     input                                   br_vld,
+    output                                  br_rdy,
     input       [REG_ID_BIT         -1:0]   br_cond_reg,
     // TODO: If two branches takes the same br_cond_reg, then
     //       they must have the same br_predicted_val, otherwise
@@ -162,8 +163,9 @@ module spec_vector #(parameter  NUM_TAG         = 4,
                                 .COUNT_ZERO(0))
     cnt_entry_vld1  (.in    (succ_entry_vld),
                      .cnt   (succ_entry_vld_cnt));
-    
-                         
+
+    assign  br_rdy = !(&entry_vld);
+
     reg     [$clog2(SPEC_DEPTH) -1:0]   new_entry_idx;
     
     always @* begin
@@ -187,7 +189,7 @@ module spec_vector #(parameter  NUM_TAG         = 4,
                     entry_vld   [i] <= 1'b0;
                 end
                 // This case may happen with cond write back
-                else if (br_vld && i == new_entry_idx) begin
+                else if (br_vld && br_rdy && i == new_entry_idx) begin
                     entry_vld   [i] <= 1'b1;
                 end
                 else if (br_pred_vld) begin
@@ -203,7 +205,7 @@ module spec_vector #(parameter  NUM_TAG         = 4,
             end
             
             always@(posedge clk) begin
-                if (br_vld && i == new_entry_idx) begin
+                if (br_vld && br_rdy && i == new_entry_idx) begin
                     entry_cond_reg      [i] <= br_cond_reg;
                     entry_cond_pred_val [i] <= br_cond_predicted_val;
                     entry_fail_pc       [i] <= br_rollback_pc;

@@ -83,7 +83,7 @@ module issue_station    #(parameter STATION_SIZE    = 4,
         end
         
         for (i=0; i<STATION_SIZE; i=i+1) begin: gen_in
-            assign  station_rollback[i] = entry_vld[i] && br_pred_vld && br_pred_rdy && spec_levels[i] >= br_pred_fail_level;
+            assign  station_rollback[i] = entry_vld[i] && br_pred_vld && br_pred_rdy && !br_pred_succ && spec_levels[i] >= br_pred_fail_level;
         
             // If my dst reg is ri, then it's impossible that some other FUs are still writing ri, so ri is ready to read for me
             // The reg is not in ready_reg_mask is because it still write pending (by me)
