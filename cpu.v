@@ -1,5 +1,3 @@
-`define ASSERT
-
 module cpu  #   (parameter  REG_BIT         = 16,
                  parameter  IMM_BIT         = 8,
                  parameter  NUM_REG         = 16,
@@ -65,18 +63,7 @@ module cpu  #   (parameter  REG_BIT         = 16,
     reg     [INST_ID_BIT-1:0]    nxt_id;
     
     wire    [NUM_TAG*REG_ID_BIT -1:0]   cur_tag_map;
-
-    wire                        br_vld                       = inst_vld && inst_op == OP_BZ;
-    wire                        br_rdy;
-    reg                         br_speculative;
-    wire       [REG_ID_BIT-1:0] br_cond_reg                  = cur_tag_map[inst_src_reg0*REG_ID_BIT+:REG_ID_BIT];
-    wire       [IMM_BIT   -1:0] br_target                    = inst_imm;
-    wire                        br_cond_predicted_val        = 1'b0;
     
-    // These depends on the branch is BZ or BNZ
-    wire       [PC_BIT    -1:0] br_predicted_pc              = br_cond_predicted_val ? cur_pc + 1 : br_target;
-    wire       [PC_BIT    -1:0] br_predicted_fail_pc         = br_cond_predicted_val ? br_target  : cur_pc + 1;
-
     // These are from spec_vector
     wire                                           br_pred_vld;
     wire                                           br_pred_succ;
@@ -87,7 +74,18 @@ module cpu  #   (parameter  REG_BIT         = 16,
     wire       [INST_ID_BIT                  -1:0] br_pred_fail_id;
     
     wire    rollback_vld    = br_pred_vld && !br_pred_succ;
+
+    wire                        br_vld;
+    wire                        br_rdy;
+    reg                         br_speculative;
+    wire       [REG_ID_BIT-1:0] br_cond_reg                  = cur_tag_map[inst_src_reg0*REG_ID_BIT+:REG_ID_BIT];
+    wire       [IMM_BIT   -1:0] br_target                    = inst_imm;
+    wire                        br_cond_predicted_val        = 1'b0;
     
+    // These depends on the branch is BZ or BNZ
+    wire       [PC_BIT    -1:0] br_predicted_pc              = br_cond_predicted_val ? cur_pc + 1 : br_target;
+    wire       [PC_BIT    -1:0] br_predicted_fail_pc         = br_cond_predicted_val ? br_target  : cur_pc + 1;
+
     // Even if the branch is not speculative, the branch cond reg still need 1T to read out
     // so we still speculatively fetch instruction of one branch direction, and fetch another direction
     // when predict fail
@@ -95,6 +93,8 @@ module cpu  #   (parameter  REG_BIT         = 16,
     wire                    br_cond_rd_val_vld;
     wire    [REG_BIT-1:0]   br_cond_rd_val;
     reg     [PC_BIT -1:0]   br_cond_rd_val_predict_fail_pc;
+    
+    assign  br_vld                       = inst_vld && inst_op == OP_BZ && !rollback_vld && (!br_cond_rd_val_vld || br_cond_rd_val == br_cond_predicted_val);
     
     always@(posedge clk or negedge rst_n) begin
         if (~rst_n) begin

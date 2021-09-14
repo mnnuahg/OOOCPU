@@ -28,7 +28,7 @@ module test_bench();
     localparam  NUM_INST        = 32;
     localparam  NUM_CYCLE       = 1000;
     localparam  NUM_TEST        = 10;
-    localparam  RAND_GEN_INST   = 0;
+    localparam  RAND_GEN_INST   = 1;
     
     function automatic random_gen_inst(ref bit [INST_BIT-1:0] inst [NUM_INST-1:0], ref integer seed);
         bit [NUM_TAG    -1:0]   reg_initialized;
